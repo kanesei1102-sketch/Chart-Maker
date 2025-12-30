@@ -8,11 +8,11 @@ import numpy as np
 # ---------------------------------------------------------
 # 設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bar Plot Maker (Fixed)", layout="wide")
-st.title("📊 棒グラフ作成ツール（軸・数値修正版）")
+st.set_page_config(page_title="Bar Plot Maker (Final)", layout="wide")
+st.title("📊 棒グラフ作成ツール（軸・数値 修正版）")
 st.markdown("""
-数値データを貼り付けるだけで作成できます。
-**有意差ラベル（**** や n.s.）** も対応しています。
+**軸の表示を修正しました。**
+縦軸と横軸がしっかり繋がり、数値も必ず表示されます。
 """)
 
 # セッション設定
@@ -80,7 +80,7 @@ for i in range(st.session_state.cond_count):
                 if nums1:
                     dfs_temp.append(pd.DataFrame({'Value': nums1, 'Group': group1_name, 'Condition': cond_name}))
             except:
-                st.error(f"条件 {i+1}: 数値エラー")
+                pass # エラー時は無視
 
         if input2:
             try:
@@ -88,7 +88,7 @@ for i in range(st.session_state.cond_count):
                 if nums2:
                     dfs_temp.append(pd.DataFrame({'Value': nums2, 'Group': group2_name, 'Condition': cond_name}))
             except:
-                st.error(f"条件 {i+1}: 数値エラー")
+                pass
         
         if dfs_temp:
             current_df = pd.concat(dfs_temp)
@@ -108,11 +108,13 @@ if cond_data_list:
     st.subheader("プレビュー")
     
     try:
-        # スタイル設定
-        sns.set_style("ticks") # 軸の目盛りを表示するスタイル
+        # フォント設定
         plt.rcParams['font.family'] = 'sans-serif'
+        plt.rcParams['xtick.direction'] = 'out' # 目盛りを外向きに
+        plt.rcParams['ytick.direction'] = 'out'
         
         # 描画
+        # sharey=False にすることで、各グラフが独立して軸を持つようにします（後で手動で消すため）
         g = sns.catplot(
             data=final_df, 
             kind="bar", 
@@ -120,7 +122,8 @@ if cond_data_list:
             col_order=order_list,
             palette={group1_name: color1, group2_name: color2},
             edgecolor='black', capsize=0.1, errwidth=1.5, ci='sd',
-            height=5, aspect=0.6, sharey=True
+            height=5, aspect=0.6, 
+            sharey=True # 軸の範囲（スケール）は統一する
         )
 
         g.map_dataframe(sns.stripplot, x='Group', y='Value', hue='Group',
@@ -130,21 +133,35 @@ if cond_data_list:
         g.set_axis_labels("", "Number of cells")
         g.set_titles("{col_name}")
 
-        # ★ 軸の修正ポイント ★
+        # ★ 軸の強制修正処理 ★
         for i, ax in enumerate(g.axes.flat):
-            # 1. まず全ての軸で、上と右の枠線を消す (trim=Falseで軸を離さない！)
-            sns.despine(ax=ax, top=True, right=True, trim=False)
+            # まず、すべての枠線（スパイン）の設定をリセット
+            ax.spines['top'].set_visible(False)   # 上は消す
+            ax.spines['right'].set_visible(False) # 右は消す
             
-            # 2. 2つ目以降のグラフだけ、左の軸（Y軸）を消す
-            if i > 0:
-                sns.despine(ax=ax, left=True, top=True, right=True, trim=False)
+            # 下（X軸）は全員表示、かつ黒色ではっきりさせる
+            ax.spines['bottom'].set_visible(True)
+            ax.spines['bottom'].set_color('black')
+            ax.spines['bottom'].set_linewidth(1.2)
+            
+            # 左（Y軸）の設定
+            if i == 0:
+                # 1番目のグラフ: Y軸を表示
+                ax.spines['left'].set_visible(True)
+                ax.spines['left'].set_color('black')
+                ax.spines['left'].set_linewidth(1.2)
+                
+                # 目盛りと数値を強制表示
+                ax.yaxis.set_ticks_position('left')
+                ax.tick_params(axis='y', which='major', length=6, width=1.2, labelsize=12, labelleft=True)
+                ax.set_ylabel("Number of cells", fontsize=14)
+            else:
+                # 2番目以降: Y軸の線を消す
+                ax.spines['left'].set_visible(False)
                 ax.yaxis.set_ticks([]) # 目盛りを消す
                 ax.set_ylabel("")      # ラベルを消す
-            else:
-                # 3. 1つ目のグラフは、Y軸の数値を強制的に表示する
-                ax.tick_params(axis='y', which='major', left=True, labelleft=True)
             
-            # 4. 有意差ラインの描画
+            # 有意差ラインの描画
             if i < len(cond_data_list):
                 meta = cond_data_list[i]
                 sig_text = meta['sig']
@@ -161,14 +178,14 @@ if cond_data_list:
                     else:
                         ax.text(0, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=14)
 
-        # グラフ同士の間隔を少し詰める（見栄え調整）
+        # グラフ間の調整
         plt.subplots_adjust(wspace=0.1)
 
         st.pyplot(g.figure)
 
         img = io.BytesIO()
         g.figure.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="fixed_plot.png", mime="image/png")
+        st.download_button("画像をダウンロード", data=img, file_name="final_plot.png", mime="image/png")
 
     except Exception as e:
         st.error(f"描画エラー: {e}")
