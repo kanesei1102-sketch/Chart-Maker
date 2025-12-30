@@ -8,10 +8,10 @@ import numpy as np
 # ---------------------------------------------------------
 # 設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bar Plot Maker (Width)", layout="wide")
-st.title("📊 棒グラフ作成ツール（太さ調整版）")
+st.set_page_config(page_title="Bar Plot Maker (Line Fix)", layout="wide")
+st.title("📊 棒グラフ作成ツール（有意差ライン調整版）")
 st.markdown("""
-**新機能:** サイドバーで「棒グラフの幅」を変更できるようになりました。
+**修正点:** 有意差ラベル（****など）の下に、適切な間隔でラインを引くように調整しました。
 """)
 
 # セッション設定
@@ -44,10 +44,7 @@ with st.sidebar:
     color2 = st.color_picker("グループ2の色", "#69f0ae")
     
     st.subheader("グラフの形状")
-    # ★追加: 棒の太さを調整するスライダー (0.1〜1.0)
     bar_width = st.slider("棒グラフの幅", min_value=0.1, max_value=1.0, value=0.6, step=0.1)
-    
-    # ついでにエラーバーのキャップ（横線）の長さも調整できるようにしておくと便利です
     cap_size = st.slider("エラーバーの横線 (Capsize)", min_value=0.0, max_value=0.5, value=0.1, step=0.05)
 
 # ---------------------------------------------------------
@@ -114,18 +111,15 @@ if cond_data_list:
     order_list = [item['name'] for item in cond_data_list]
 
     global_max_val = final_df['Value'].max()
-    y_limit = global_max_val * 1.3
+    y_limit = global_max_val * 1.35 # 少し余裕を増やす
 
     st.subheader("プレビュー")
     
     try:
-        # フォント設定
         plt.rcParams['font.family'] = 'sans-serif'
         plt.rcParams['xtick.direction'] = 'out'
         plt.rcParams['ytick.direction'] = 'out'
         
-        # 描画
-        # ★ width=bar_width を追加しました
         g = sns.catplot(
             data=final_df, 
             kind="bar", 
@@ -133,12 +127,12 @@ if cond_data_list:
             col_order=order_list,
             palette={group1_name: color1, group2_name: color2},
             edgecolor='black', 
-            capsize=cap_size, # ★ここも変数化
+            capsize=cap_size,
             errwidth=1.5, ci='sd',
-            width=bar_width,  # ★ここが太さ調整のキモです
+            width=bar_width,
             height=5, aspect=0.6, 
             sharey=False,
-            legend=False # 凡例はcatplot側では消して、必要なら別途描画するが、今回はX軸ラベルでわかるのでOK
+            legend=False
         )
 
         g.map_dataframe(sns.stripplot, x='Group', y='Value', hue='Group',
@@ -148,10 +142,10 @@ if cond_data_list:
         g.set_axis_labels("", "Number of cells")
         g.set_titles("{col_name}")
 
-        # 軸の手動調整
         for i, ax in enumerate(g.axes.flat):
             ax.set_ylim(0, y_limit)
-
+            
+            # 枠線設定
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
             
@@ -163,7 +157,6 @@ if cond_data_list:
                 ax.spines['left'].set_visible(True)
                 ax.spines['left'].set_color('black')
                 ax.spines['left'].set_linewidth(1.2)
-                
                 ax.yaxis.set_visible(True)
                 ax.tick_params(axis='y', which='major', length=6, width=1.2, labelsize=12, labelleft=True)
                 ax.set_ylabel("Number of cells", fontsize=14)
@@ -172,7 +165,7 @@ if cond_data_list:
                 ax.yaxis.set_visible(False)
                 ax.set_ylabel("")
             
-            # 有意差ライン
+            # --- ★有意差ラインの描画修正★ ---
             if i < len(cond_data_list):
                 meta = cond_data_list[i]
                 sig_text = meta['sig']
@@ -180,24 +173,37 @@ if cond_data_list:
                     d = meta['df']
                     this_max = d['Value'].max()
                     
-                    y_line = this_max * 1.1 
-                    h = this_max * 0.02
+                    # 線の高さ（バーの最大値より少し上）
+                    y_line = this_max * 1.15 
                     
+                    # 線からさらに少し上に文字を置くためのオフセット
+                    text_offset = this_max * 0.05 
+                    
+                    # 線の両端の「下向きのヒゲ」の長さ
+                    h = this_max * 0.03
+
                     groups_in_this_cond = d['Group'].unique()
                     
-                    # 棒が細くなったときに有意差ラインの幅も調整したい場合はここを触りますが
-                    # 基本的には 0〜1 の間の線でOKです
-                    line_start = 0
-                    line_end = 1
-                    
-                    # バーが細すぎる場合、線の端を少し内側に寄せると綺麗に見えます（簡易的な調整）
-                    # 今回は標準的な描画方法のままにします
-                    
+                    # グループが2つあるなら、その間を結ぶ線を描く
                     if len(groups_in_this_cond) >= 2:
-                        ax.plot([line_start, line_start, line_end, line_end], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
-                        ax.text(0.5, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=14)
+                        # x=0 (左のバー) と x=1 (右のバー) を結ぶ
+                        line_x_start = 0
+                        line_x_end = 1
+                        
+                        # ブラケット（コの字型の線）を描画
+                        # (x0, y-h) -> (x0, y) -> (x1, y) -> (x1, y-h)
+                        ax.plot(
+                            [line_x_start, line_x_start, line_x_end, line_x_end], 
+                            [y_line - h, y_line, y_line, y_line - h], 
+                            lw=1.5, c='k'
+                        )
+                        
+                        # 文字を線の少し上に置く (y_line + text_offset)
+                        ax.text(0.5, y_line + text_offset, sig_text, ha='center', va='bottom', color='k', fontsize=16)
+                    
                     else:
-                        ax.text(0, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=14)
+                        # 1群しかない場合は、バーの真上に文字だけ（または短い線）
+                        ax.text(0, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=16)
 
         plt.subplots_adjust(wspace=0)
 
@@ -205,7 +211,7 @@ if cond_data_list:
 
         img = io.BytesIO()
         g.figure.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="width_adjusted_plot.png", mime="image/png")
+        st.download_button("画像をダウンロード", data=img, file_name="final_line_fix.png", mime="image/png")
 
     except Exception as e:
         st.error(f"描画エラー: {e}")
