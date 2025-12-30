@@ -5,20 +5,15 @@ import matplotlib.pyplot as plt
 import io
 
 # ---------------------------------------------------------
-# 1. ページ設定とセッション状態の初期化
+# 設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bar Plot Maker (Dynamic)", layout="wide")
+st.set_page_config(page_title="Bar Plot Maker (Simple)", layout="wide")
+st.title("📊 棒グラフ作成ツール（数値コピペ版）")
+st.markdown("Excelの数値列をそのまま貼り付けてください。ヘッダー（Group, Valueなどの文字）は不要です。")
 
-st.title("📊 科学論文風 棒グラフ作成ツール")
-st.markdown("""
-**条件（Condition）ごとにデータを入力してください。**
-* データ入力欄には **「Group」と「Value」** の2列を入力してください（タブ区切り推奨）。
-* 「条件を追加」ボタンで入力枠を増やせます。
-""")
-
-# セッション状態（条件の数）を管理
+# セッション状態で条件数を管理
 if 'cond_count' not in st.session_state:
-    st.session_state.cond_count = 1  # 最初は1つ
+    st.session_state.cond_count = 3  # デフォルトで3条件（DMSO, X, Y）用意
 
 def add_condition():
     st.session_state.cond_count += 1
@@ -27,126 +22,104 @@ def remove_condition():
     if st.session_state.cond_count > 1:
         st.session_state.cond_count -= 1
 
-# ---------------------------------------------------------
-# 2. サイドバー：グラフ全体の操作
-# ---------------------------------------------------------
+# サイドバー
 with st.sidebar:
-    st.header("操作パネル")
-    st.button("＋ 条件を追加する", on_click=add_condition, type="primary")
+    st.header("設定")
+    st.button("＋ 条件を増やす", on_click=add_condition)
     if st.session_state.cond_count > 1:
-        st.button("－ 最後の条件を削除", on_click=remove_condition)
+        st.button("－ 条件を減らす", on_click=remove_condition)
     
     st.divider()
-    st.write(f"現在の条件数: {st.session_state.cond_count}")
-    st.info("データ数の上限: 各条件につき100個程度まで推奨")
+    # グループ名の設定（全体共通）
+    st.subheader("グループ名")
+    group1_name = st.text_input("グループ1の名前", value="Control")
+    group2_name = st.text_input("グループ2の名前", value="A")
+    
+    # 色の設定
+    st.subheader("色の設定")
+    color1 = st.color_picker("グループ1の色", "#808080") # グレー
+    color2 = st.color_picker("グループ2の色", "#69f0ae") # 緑
 
 # ---------------------------------------------------------
-# 3. データ入力エリア（動的に生成）
+# データ入力と処理
 # ---------------------------------------------------------
-all_dfs = [] # ここに各条件のデータフレームを貯める
+all_dfs = [] 
 
-# デフォルトデータのサンプル（2列だけ）
-sample_text_1 = """Group\tValue
-Control\t420
-Control\t430
-A\t180
-A\t190"""
-
-sample_text_2 = """Group\tValue
-Control\t500
-Control\t510
-A\t200
-A\t210"""
-
-# 条件の数だけループして入力フォームを作る
-cols = st.columns(min(st.session_state.cond_count, 3)) # 横並び（最大3列まで）にするか、縦に積むか
-
+# 条件の数だけループ
 for i in range(st.session_state.cond_count):
-    # レイアウト: たくさんある場合は縦に並べる
     with st.container():
-        st.markdown(f"### 条件 {i+1}")
-        col1, col2 = st.columns([1, 3])
+        st.markdown(f"---")
+        # デフォルトの条件名
+        def_name = ["DMSO", "X", "Y", "Z"][i] if i < 4 else f"Cond_{i+1}"
         
-        with col1:
-            # 条件名の入力（デフォルト値を設定）
-            default_name = ["DMSO", "X", "Y", "Z"][i] if i < 4 else f"Cond_{i+1}"
-            cond_name = st.text_input(f"条件名 ({i+1})", value=default_name, key=f"name_{i}")
+        # レイアウト：左に条件名、右に2つのデータ入力欄
+        c_title, c_g1, c_g2 = st.columns([1, 2, 2])
         
-        with col2:
-            # データの入力
-            default_val = sample_text_1 if i == 0 else (sample_text_2 if i == 1 else "")
-            data_text = st.text_area(
-                f"データ ({cond_name}) - Headerあり: Group, Value",
-                value=default_val,
-                height=150,
-                key=f"data_{i}",
-                placeholder="Group\tValue\nControl\t100\n..."
-            )
+        with c_title:
+            st.markdown(f"#### 条件 {i+1}")
+            cond_name = st.text_input("条件名", value=def_name, key=f"name_{i}")
+        
+        with c_g1:
+            st.write(f"▼ **{group1_name}** の数値")
+            # サンプルデータ(最初の1つだけ入れておく)
+            def_val1 = "420\n430\n410\n440" if i == 0 else ""
+            input1 = st.text_area(f"{group1_name}のデータ", value=def_val1, height=100, key=f"d1_{i}", placeholder="数値を改行で入力")
 
-        # データがあれば処理してリストに追加
-        if data_text:
+        with c_g2:
+            st.write(f"▼ **{group2_name}** の数値")
+            def_val2 = "180\n190\n185\n175" if i == 0 else ""
+            input2 = st.text_area(f"{group2_name}のデータ", value=def_val2, height=100, key=f"d2_{i}", placeholder="数値を改行で入力")
+
+        # データ処理
+        # 入力1 (Group 1)
+        if input1:
             try:
-                # 読み込み
-                temp_df = pd.read_csv(io.StringIO(data_text), sep='\t')
-                if temp_df.shape[1] < 2:
-                    temp_df = pd.read_csv(io.StringIO(data_text), sep=',')
-                
-                # カラム名が足りない場合のチェック
-                if temp_df.shape[1] >= 2:
-                    # 強制的にカラム名を統一（結合時のエラー防止）
-                    # 1列目=Group, 2列目=Value とみなす
-                    temp_df = temp_df.iloc[:, :2]
-                    temp_df.columns = ['Group', 'Value']
-                    
-                    # 条件名カラムを追加
-                    temp_df['Condition'] = cond_name
-                    
-                    # 100個制限のチェック（警告のみ）
-                    if len(temp_df) > 100:
-                        st.warning(f"⚠️ {cond_name}のデータ数が100を超えています（{len(temp_df)}個）。描画が重くなる可能性があります。")
-                    
-                    all_dfs.append(temp_df)
-                else:
-                    st.error(f"条件 {i+1}: 列が足りません。「Group」と「Value」の2列が必要です。")
-            
-            except Exception as e:
-                st.error(f"条件 {i+1} の読み込みエラー: {e}")
-        
-        st.divider()
+                # 数値だけを取り出す（改行区切り）
+                nums1 = [float(x.strip()) for x in input1.strip().split('\n') if x.strip()]
+                df1 = pd.DataFrame({'Value': nums1})
+                df1['Group'] = group1_name
+                df1['Condition'] = cond_name
+                all_dfs.append(df1)
+            except:
+                st.error(f"条件{i+1} ({group1_name}): 数値以外が含まれています")
+
+        # 入力2 (Group 2)
+        if input2:
+            try:
+                nums2 = [float(x.strip()) for x in input2.strip().split('\n') if x.strip()]
+                df2 = pd.DataFrame({'Value': nums2})
+                df2['Group'] = group2_name
+                df2['Condition'] = cond_name
+                all_dfs.append(df2)
+            except:
+                st.error(f"条件{i+1} ({group2_name}): 数値以外が含まれています")
 
 # ---------------------------------------------------------
-# 4. 結合とグラフ描画
+# グラフ描画
 # ---------------------------------------------------------
 if all_dfs:
-    # 全データを縦に結合
     final_df = pd.concat(all_dfs, ignore_index=True)
     
-    st.subheader(f"グラフプレビュー (総データ数: {len(final_df)})")
-    
-    # 描画処理
+    st.subheader("プレビュー")
     try:
         sns.set_style("ticks")
         
-        # 条件ごとにグラフを分ける (catplot)
+        # catplotで条件ごとに枠を分ける
         g = sns.catplot(
             data=final_df, 
             kind="bar", 
-            x='Group',      
-            y='Value',        
-            col='Condition',     # 条件ごとに枠を分ける
-            hue='Group',
-            palette={'Control': 'gray', 'A': '#69f0ae'} if 'Control' in final_df['Group'].values else None,
+            x='Group', y='Value', col='Condition', hue='Group',
+            palette={group1_name: color1, group2_name: color2}, # サイドバーで設定した色
             edgecolor='black', capsize=0.1, errwidth=1.5, ci='sd',
-            height=5, aspect=0.7,
-            sharey=True
+            height=5, aspect=0.7, sharey=True
         )
 
-        # 個別プロット
+        # 個別データプロット
         g.map_dataframe(sns.stripplot, x='Group', y='Value', hue='Group',
                         palette=['white', 'white'], edgecolor='gray', 
                         linewidth=1, size=6, jitter=True, dodge=True)
 
-        g.set_axis_labels("", "Value")
+        g.set_axis_labels("", "Number of cells") # Y軸ラベル
         g.set_titles("{col_name}")
         
         st.pyplot(g.figure)
@@ -154,9 +127,9 @@ if all_dfs:
         # ダウンロード
         img = io.BytesIO()
         g.figure.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="multi_cond_plot.png", mime="image/png")
+        st.download_button("画像をダウンロード", data=img, file_name="bar_plot.png", mime="image/png")
 
     except Exception as e:
-        st.error(f"描画エラー: {e}")
+        st.error(f"エラー: {e}")
 else:
-    st.info("データを入力するとここにグラフが表示されます。")
+    st.info("データを入力してください")
