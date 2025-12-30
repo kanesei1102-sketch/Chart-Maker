@@ -8,11 +8,11 @@ import numpy as np
 # ---------------------------------------------------------
 # 設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bar Plot Maker (Sig)", layout="wide")
-st.title("📊 棒グラフ作成ツール（有意差ライン対応版）")
+st.set_page_config(page_title="Bar Plot Maker (Flexible)", layout="wide")
+st.title("📊 棒グラフ作成ツール（柔軟入力版）")
 st.markdown("""
 数値データを貼り付けるだけで作成できます。
-**有意差ラベル（**** や n.s.）** を入力すると、自動的にバーの上に描画されます。
+**1つのグループだけでも、2つの比較でも描画可能です。**
 """)
 
 # セッション設定
@@ -45,21 +45,18 @@ with st.sidebar:
 # ---------------------------------------------------------
 # データ入力処理
 # ---------------------------------------------------------
-cond_data_list = [] # 各条件のデータとメタデータを保存するリスト
+cond_data_list = [] 
 
 for i in range(st.session_state.cond_count):
     with st.container():
         st.markdown("---")
-        # デフォルト名
         def_name = ["DMSO", "X", "Y", "Z"][i] if i < 4 else f"Cond_{i+1}"
         
-        # 3カラム構成：条件名・有意差ラベル・データ入力
         c_meta, c_g1, c_g2 = st.columns([1.5, 2, 2])
         
         with c_meta:
             st.markdown(f"#### 条件 {i+1}")
             cond_name = st.text_input("条件名", value=def_name, key=f"name_{i}")
-            # ★ここで有意差ラベルを入力
             sig_label = st.text_input(
                 "有意差ラベル (空欄なら表示なし)", 
                 placeholder="例: ****, n.s.", 
@@ -73,28 +70,34 @@ for i in range(st.session_state.cond_count):
 
         with c_g2:
             st.write(f"▼ **{group2_name}**")
+            # デフォルト値も空にしておく（邪魔にならないように）
             def_val2 = "180\n190\n185\n175" if i == 0 else ""
             input2 = st.text_area(f"データ2", value=def_val2, height=100, key=f"d2_{i}", label_visibility="collapsed")
 
-        # データ処理
-        current_df = pd.DataFrame()
-        valid_data = False
+        # --- ★ここを修正（片方だけでもOKにする） ---
+        dfs_temp = [] # 一時的にデータフレームを入れるリスト
         
-        if input1 and input2:
+        # グループ1の処理
+        if input1:
             try:
                 nums1 = [float(x.strip()) for x in input1.strip().split('\n') if x.strip()]
-                nums2 = [float(x.strip()) for x in input2.strip().split('\n') if x.strip()]
-                
-                df1 = pd.DataFrame({'Value': nums1, 'Group': group1_name, 'Condition': cond_name})
-                df2 = pd.DataFrame({'Value': nums2, 'Group': group2_name, 'Condition': cond_name})
-                
-                current_df = pd.concat([df1, df2])
-                valid_data = True
+                if nums1:
+                    dfs_temp.append(pd.DataFrame({'Value': nums1, 'Group': group1_name, 'Condition': cond_name}))
             except:
-                st.error(f"条件 {i+1}: 数値以外のデータが含まれています。")
+                st.error(f"条件 {i+1} ({group1_name}): 数値以外のデータが含まれています。")
 
-        if valid_data:
-            # 描画順序を保つためにリストに保存
+        # グループ2の処理
+        if input2:
+            try:
+                nums2 = [float(x.strip()) for x in input2.strip().split('\n') if x.strip()]
+                if nums2:
+                    dfs_temp.append(pd.DataFrame({'Value': nums2, 'Group': group2_name, 'Condition': cond_name}))
+            except:
+                st.error(f"条件 {i+1} ({group2_name}): 数値以外のデータが含まれています。")
+        
+        # どちらか一つでもデータがあればリストに追加
+        if dfs_temp:
+            current_df = pd.concat(dfs_temp)
             cond_data_list.append({
                 'name': cond_name,
                 'df': current_df,
@@ -105,10 +108,7 @@ for i in range(st.session_state.cond_count):
 # グラフ描画
 # ---------------------------------------------------------
 if cond_data_list:
-    # 全データを結合
     final_df = pd.concat([item['df'] for item in cond_data_list], ignore_index=True)
-    
-    # 条件の表示順序を固定（入力順）
     order_list = [item['name'] for item in cond_data_list]
 
     st.subheader("プレビュー")
@@ -117,12 +117,12 @@ if cond_data_list:
         sns.set_style("ticks")
         plt.rcParams['font.family'] = 'sans-serif'
 
-        # catplotで描画（col_orderで順序を指定）
         g = sns.catplot(
             data=final_df, 
             kind="bar", 
             x='Group', y='Value', col='Condition', hue='Group',
-            col_order=order_list,  # ★順序を固定
+            col_order=order_list,
+            # 色の設定（データに含まれるグループ名だけを指定してエラー回避）
             palette={group1_name: color1, group2_name: color2},
             edgecolor='black', capsize=0.1, errwidth=1.5, ci='sd',
             height=5, aspect=0.6, sharey=True
@@ -132,51 +132,45 @@ if cond_data_list:
                         palette=['white', 'white'], edgecolor='gray', 
                         linewidth=1, size=6, jitter=True, dodge=True)
 
-        # 軸ラベルとタイトルの設定
         g.set_axis_labels("", "Number of cells")
         g.set_titles("{col_name}")
 
-        # -------------------------------------------------------
-        # ★ 有意差ラインとアスタリスクの描画処理 ★
-        # -------------------------------------------------------
+        # 有意差ラインと軸調整
         for i, ax in enumerate(g.axes.flat):
             if i < len(cond_data_list):
                 meta = cond_data_list[i]
                 sig_text = meta['sig']
                 
-                # ラベルが入力されている場合のみ描画
+                # 有意差ライン（データが2群あるとき推奨だが、1群でも最大値の上に表示は可能）
                 if sig_text:
-                    # その条件におけるデータの最大値を探す
-                    # (バーの高さ or ドットの高さ の高い方を取得)
                     d = meta['df']
                     max_val = d['Value'].max()
-                    
-                    # 線の高さを設定（最大値の10%上くらい）
                     y_line = max_val * 1.1 
-                    h = max_val * 0.02 # 線の両端のヒゲの長さ
-
-                    # 線を描く (x=0 と x=1 の間)
-                    ax.plot([0, 0, 1, 1], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
+                    h = max_val * 0.02
                     
-                    # 文字を書く
-                    ax.text(0.5, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=14)
+                    # グループが1つしかないときはラインの幅を調整する必要があるが
+                    # 簡易的に中央(0)付近に描画
+                    groups_in_this_cond = d['Group'].unique()
+                    if len(groups_in_this_cond) >= 2:
+                        ax.plot([0, 0, 1, 1], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
+                        ax.text(0.5, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=14)
+                    else:
+                        # 1群しかない場合はバーの真上に文字だけ置く
+                        ax.text(0, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=14)
 
-            # -------------------------------------------------------
-            # 軸のスリム化処理（前回と同じ）
-            # -------------------------------------------------------
-            if i > 0: # 2つ目以降
+            # 軸のスリム化
+            if i > 0: 
                 sns.despine(ax=ax, left=True)
                 ax.yaxis.set_ticks([])
                 ax.set_ylabel("")
-            else: # 1つ目
+            else:
                 sns.despine(ax=ax, top=True, right=True)
 
         st.pyplot(g.figure)
 
-        # ダウンロード
         img = io.BytesIO()
         g.figure.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="sig_bar_plot.png", mime="image/png")
+        st.download_button("画像をダウンロード", data=img, file_name="flexible_plot.png", mime="image/png")
 
     except Exception as e:
         st.error(f"描画エラー: {e}")
