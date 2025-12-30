@@ -1,6 +1,5 @@
 import streamlit as st
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
 import io
 import numpy as np
@@ -8,11 +7,11 @@ import numpy as np
 # ---------------------------------------------------------
 # 設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bar Plot Maker (Final Fix)", layout="wide")
-st.title("📊 棒グラフ作成ツール（幅・配置 修正版）")
+st.set_page_config(page_title="Bar Plot Maker (Manual Layout)", layout="wide")
+st.title("📊 棒グラフ作成ツール（完全位置制御版）")
 st.markdown("""
-**修正:** 棒グラフ同士が離れないように、グラフ全体の比率で太さを調整するように変更しました。
-プロットの位置ズレも解消されます。
+**修正:** 棒グラフの位置を完全に固定しました。
+太さを変えても、棒同士が離れていくことはありません。プロットも常に中央に来ます。
 """)
 
 # セッション設定
@@ -41,14 +40,18 @@ with st.sidebar:
     st.divider()
     st.header("デザイン設定")
     st.subheader("色の設定")
-    color1 = st.color_picker("グループ1の色", "#808080") # グレー
-    color2 = st.color_picker("グループ2の色", "#69f0ae") # エメラルド
+    color1 = st.color_picker("グループ1の色", "#808080")
+    color2 = st.color_picker("グループ2の色", "#69f0ae")
     
-    st.subheader("グラフの形状")
-    # ★修正ポイント: width（棒の幅）ではなく、aspect（グラフの横幅比率）で調整する
-    graph_aspect = st.slider("グラフ全体の横幅比率 (太さ調整)", min_value=0.3, max_value=1.5, value=0.6, step=0.1)
+    st.subheader("形状と配置")
+    # ★ここがポイント: 棒の太さと隙間を直接指定
+    bar_width = st.slider("棒グラフの幅 (Width)", min_value=0.2, max_value=1.0, value=0.6, step=0.1)
+    bar_gap = st.slider("棒の間の隙間 (Gap)", min_value=0.0, max_value=0.5, value=0.05, step=0.01)
     
-    cap_size = st.slider("エラーバーの横線 (Capsize)", min_value=0.0, max_value=0.5, value=0.1, step=0.05)
+    cap_size = st.slider("エラーバーの横線 (Capsize)", min_value=0.0, max_value=10.0, value=5.0, step=1.0)
+    
+    # ドットのサイズ
+    dot_size = st.slider("プロットのサイズ", 10, 100, 40)
 
 # ---------------------------------------------------------
 # データ入力処理
@@ -65,11 +68,7 @@ for i in range(st.session_state.cond_count):
         with c_meta:
             st.markdown(f"#### 条件 {i+1}")
             cond_name = st.text_input("条件名", value=def_name, key=f"name_{i}")
-            sig_label = st.text_input(
-                "有意差ラベル", 
-                placeholder="例: ****", 
-                key=f"sig_{i}"
-            )
+            sig_label = st.text_input("有意差ラベル", placeholder="例: ****", key=f"sig_{i}")
         
         with c_g1:
             st.write(f"▼ **{group1_name}**")
@@ -81,130 +80,181 @@ for i in range(st.session_state.cond_count):
             def_val2 = "180\n190\n185\n175" if i == 0 else ""
             input2 = st.text_area(f"データ2", value=def_val2, height=100, key=f"d2_{i}", label_visibility="collapsed")
 
-        dfs_temp = []
+        # データをリスト化して保存
+        vals1 = []
+        vals2 = []
         if input1:
             try:
-                nums1 = [float(x.strip()) for x in input1.strip().split('\n') if x.strip()]
-                if nums1:
-                    dfs_temp.append(pd.DataFrame({'Value': nums1, 'Group': group1_name, 'Condition': cond_name}))
-            except:
-                pass
-
+                vals1 = [float(x.strip()) for x in input1.strip().split('\n') if x.strip()]
+            except: pass
         if input2:
             try:
-                nums2 = [float(x.strip()) for x in input2.strip().split('\n') if x.strip()]
-                if nums2:
-                    dfs_temp.append(pd.DataFrame({'Value': nums2, 'Group': group2_name, 'Condition': cond_name}))
-            except:
-                pass
+                vals2 = [float(x.strip()) for x in input2.strip().split('\n') if x.strip()]
+            except: pass
         
-        if dfs_temp:
-            current_df = pd.concat(dfs_temp)
+        # 少なくともどちらかにデータがあれば追加
+        if vals1 or vals2:
             cond_data_list.append({
                 'name': cond_name,
-                'df': current_df,
+                'g1': vals1,
+                'g2': vals2,
                 'sig': sig_label
             })
 
 # ---------------------------------------------------------
-# グラフ描画
+# グラフ描画 (Matplotlibによる完全手動描画)
 # ---------------------------------------------------------
 if cond_data_list:
-    final_df = pd.concat([item['df'] for item in cond_data_list], ignore_index=True)
-    order_list = [item['name'] for item in cond_data_list]
-
-    global_max_val = final_df['Value'].max()
-    y_limit = global_max_val * 1.35 
-
     st.subheader("プレビュー")
     
     try:
-        plt.rcParams['font.family'] = 'sans-serif'
-        plt.rcParams['xtick.direction'] = 'out'
-        plt.rcParams['ytick.direction'] = 'out'
+        # 全データの最大値を見つけてY軸範囲を決める
+        all_vals = []
+        for item in cond_data_list:
+            all_vals.extend(item['g1'])
+            all_vals.extend(item['g2'])
         
-        # ★修正ポイント: aspectで横幅を制御し、width引数は削除（デフォルト0.8を使う）
-        g = sns.catplot(
-            data=final_df, 
-            kind="bar", 
-            x='Group', y='Value', col='Condition', hue='Group',
-            col_order=order_list,
-            palette={group1_name: color1, group2_name: color2},
-            edgecolor='black', 
-            capsize=cap_size,
-            errwidth=1.5, ci='sd',
-            # width=bar_width,  <-- これを削除（これが隙間の原因でした）
-            height=5, 
-            aspect=graph_aspect, # <-- ここで太さを調整
-            sharey=False,
-            legend=False,
-            dodge=True # 念のため明示（デフォルトTrueですが）
-        )
+        if not all_vals:
+            st.warning("有効な数値データがありません")
+            st.stop()
+            
+        global_max = max(all_vals)
+        y_limit = global_max * 1.35
+        
+        # キャンバスの準備
+        n_plots = len(cond_data_list)
+        # グラフの数は可変、縦軸共有(sharey=True)
+        fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * 3, 5), sharey=True)
+        
+        # 1つだけの場合axesはリストではないのでリスト化
+        if n_plots == 1:
+            axes = [axes]
+            
+        plt.subplots_adjust(wspace=0) # グラフ間の隙間をゼロにする
+        plt.rcParams['font.family'] = 'sans-serif'
 
-        # プロット（点）の設定
-        g.map_dataframe(sns.stripplot, x='Group', y='Value', hue='Group',
-                        palette=['white', 'white'], edgecolor='gray', 
-                        linewidth=1, size=6, jitter=True, dodge=True)
+        # --- 各条件ごとのループ ---
+        for i, ax in enumerate(axes):
+            data = cond_data_list[i]
+            g1 = np.array(data['g1'])
+            g2 = np.array(data['g2'])
+            
+            # --- 座標の計算 ---
+            # 中心を0として、左右に配置
+            # 2群ある場合:
+            # Group1: x = - (幅/2 + 隙間/2)
+            # Group2: x = + (幅/2 + 隙間/2)
+            
+            has_g1 = len(g1) > 0
+            has_g2 = len(g2) > 0
+            
+            # 位置決定ロジック
+            if has_g1 and has_g2:
+                pos1 = -(bar_width/2 + bar_gap/2)
+                pos2 = +(bar_width/2 + bar_gap/2)
+            else:
+                # 1群しかない場合は真ん中(0)に配置
+                pos1 = 0
+                pos2 = 0
 
-        g.set_axis_labels("", "Number of cells")
-        g.set_titles("{col_name}")
+            # --- 棒グラフの描画 ---
+            # Group 1
+            if has_g1:
+                mean1 = np.mean(g1)
+                std1 = np.std(g1, ddof=1) if len(g1) > 1 else 0
+                
+                # 棒
+                ax.bar(pos1, mean1, width=bar_width, color=color1, edgecolor='black', zorder=1)
+                # エラーバー
+                ax.errorbar(pos1, mean1, yerr=std1, fmt='none', color='black', capsize=cap_size, elinewidth=1.5, zorder=2)
+                # 散布図 (Jitter処理)
+                # x座標を少し散らす
+                noise = np.random.normal(0, 0.04 * bar_width, len(g1))
+                ax.scatter(pos1 + noise, g1, color='white', edgecolor='gray', s=dot_size, zorder=3)
+            
+            # Group 2
+            if has_g2:
+                mean2 = np.mean(g2)
+                std2 = np.std(g2, ddof=1) if len(g2) > 1 else 0
+                
+                ax.bar(pos2, mean2, width=bar_width, color=color2, edgecolor='black', zorder=1)
+                ax.errorbar(pos2, mean2, yerr=std2, fmt='none', color='black', capsize=cap_size, elinewidth=1.5, zorder=2)
+                
+                noise = np.random.normal(0, 0.04 * bar_width, len(g2))
+                ax.scatter(pos2 + noise, g2, color='white', edgecolor='gray', s=dot_size, zorder=3)
 
-        for i, ax in enumerate(g.axes.flat):
+            # --- X軸ラベルの設定 ---
+            ticks = []
+            labels = []
+            if has_g1:
+                ticks.append(pos1)
+                labels.append(group1_name)
+            if has_g2:
+                ticks.append(pos2)
+                labels.append(group2_name)
+            
+            ax.set_xticks(ticks)
+            ax.set_xticklabels(labels, fontsize=11)
+            
+            # 条件名（タイトル）
+            ax.set_title(data['name'], fontsize=12, pad=10)
+            
+            # --- 有意差ライン ---
+            sig_text = data['sig']
+            if sig_text:
+                # その条件内での最大値を探す
+                current_max = 0
+                if has_g1: current_max = max(current_max, np.max(g1))
+                if has_g2: current_max = max(current_max, np.max(g2))
+                
+                y_line = current_max * 1.15
+                h = current_max * 0.03
+                
+                # ラインを引くX座標
+                if has_g1 and has_g2:
+                    lx_start, lx_end = pos1, pos2
+                elif has_g1:
+                    lx_start, lx_end = pos1 - bar_width/3, pos1 + bar_width/3
+                else: # g2 only
+                    lx_start, lx_end = pos2 - bar_width/3, pos2 + bar_width/3
+                
+                ax.plot([lx_start, lx_start, lx_end, lx_end], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
+                ax.text((lx_start+lx_end)/2, y_line + current_max*0.02, sig_text, ha='center', va='bottom', fontsize=14, color='k')
+
+            # --- 軸と枠線の整形 ---
             ax.set_ylim(0, y_limit)
             
-            # 枠線設定
+            # 上と右の枠を消す
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
+            
+            # 下の枠（X軸）
             ax.spines['bottom'].set_visible(True)
             ax.spines['bottom'].set_color('black')
             ax.spines['bottom'].set_linewidth(1.2)
             
+            # 左の枠（Y軸）
             if i == 0:
                 ax.spines['left'].set_visible(True)
                 ax.spines['left'].set_color('black')
                 ax.spines['left'].set_linewidth(1.2)
-                ax.yaxis.set_visible(True)
-                ax.tick_params(axis='y', which='major', length=6, width=1.2, labelsize=12, labelleft=True)
                 ax.set_ylabel("Number of cells", fontsize=14)
+                ax.tick_params(axis='y', left=True, labelleft=True, width=1.2)
             else:
                 ax.spines['left'].set_visible(False)
-                ax.yaxis.set_visible(False)
-                ax.set_ylabel("")
-            
-            # --- 有意差ライン ---
-            if i < len(cond_data_list):
-                meta = cond_data_list[i]
-                sig_text = meta['sig']
-                if sig_text:
-                    d = meta['df']
-                    this_max = d['Value'].max()
-                    y_line = this_max * 1.15 
-                    text_offset = this_max * 0.05 
-                    h = this_max * 0.03
+                ax.tick_params(axis='y', left=False, labelleft=False)
 
-                    groups_in_this_cond = d['Group'].unique()
-                    
-                    if len(groups_in_this_cond) >= 2:
-                        # 2群ある場合
-                        line_x_start = 0
-                        line_x_end = 1
-                        ax.plot([line_x_start, line_x_start, line_x_end, line_x_end], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
-                        ax.text(0.5, y_line + text_offset, sig_text, ha='center', va='bottom', color='k', fontsize=16)
-                    else:
-                        # 1群の場合: デフォルトのバー幅（0.8）に合わせて線を引く
-                        w = 0.8 / 2 # barplotのデフォルト幅は0.8
-                        line_x_start = -w
-                        line_x_end = w
-                        ax.plot([line_x_start, line_x_start, line_x_end, line_x_end], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
-                        ax.text(0, y_line + text_offset, sig_text, ha='center', va='bottom', color='k', fontsize=16)
+            # X軸の範囲を調整（棒が見切れないように）
+            # 中心0から、棒の端まで + 余白
+            margin = 0.5 # 適当な余白
+            max_pos = (bar_width/2 + bar_gap/2) + bar_width/2
+            ax.set_xlim(-(max_pos + margin), (max_pos + margin))
 
-        plt.subplots_adjust(wspace=0)
-
-        st.pyplot(g.figure)
+        st.pyplot(fig)
 
         img = io.BytesIO()
-        g.figure.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="final_plot_fixed.png", mime="image/png")
+        fig.savefig(img, format='png', bbox_inches='tight')
+        st.download_button("画像をダウンロード", data=img, file_name="manual_fixed_plot.png", mime="image/png")
 
     except Exception as e:
         st.error(f"描画エラー: {e}")
