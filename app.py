@@ -1,16 +1,17 @@
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches # 凡例用
 import io
 import numpy as np
 
 # ---------------------------------------------------------
 # 設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bar Plot Maker (Custom Axis)", layout="wide")
-st.title("📊 棒グラフ作成ツール（Y軸ラベル自由変更版）")
+st.set_page_config(page_title="Bar Plot Maker (With Legend)", layout="wide")
+st.title("📊 棒グラフ作成ツール（凡例付き）")
 st.markdown("""
-**修正:** サイドバーでY軸のタイトル（ラベル）を自由に変更できるようにしました。
+**修正:** グラフの右側に、グループの凡例（Legend）を表示するようにしました。
 """)
 
 # セッション設定
@@ -36,7 +37,6 @@ with st.sidebar:
     group1_name = st.text_input("グループ1 (例: Control)", value="Control")
     group2_name = st.text_input("グループ2 (例: A)", value="A")
     
-    # ★ここに追加しました★
     st.divider()
     st.header("軸の設定")
     y_axis_label = st.text_input("Y軸のタイトル", value="Number of cells")
@@ -44,14 +44,17 @@ with st.sidebar:
     st.divider()
     st.header("デザイン設定")
     st.subheader("色の設定")
-    color1 = st.color_picker("グループ1の色", "#808080")
-    color2 = st.color_picker("グループ2の色", "#69f0ae")
+    color1 = st.color_picker("グループ1の色", "#999999") # 論文っぽいグレー
+    color2 = st.color_picker("グループ2の色", "#66c2a5") # エメラルドグリーン
     
     st.subheader("形状と配置")
     bar_width = st.slider("棒グラフの幅 (Width)", min_value=0.2, max_value=1.0, value=0.6, step=0.1)
     bar_gap = st.slider("棒の間の隙間 (Gap)", min_value=0.0, max_value=0.5, value=0.05, step=0.01)
     cap_size = st.slider("エラーバーの横線 (Capsize)", min_value=0.0, max_value=10.0, value=5.0, step=1.0)
     dot_size = st.slider("プロットのサイズ", 10, 100, 40)
+    
+    # ★追加: 凡例の表示切り替え
+    show_legend = st.checkbox("凡例を表示する", value=True)
 
 # ---------------------------------------------------------
 # データ入力処理
@@ -107,7 +110,12 @@ if cond_data_list:
     
     try:
         all_vals = []
+        has_any_g1 = False
+        has_any_g2 = False
+        
         for item in cond_data_list:
+            if item['g1']: has_any_g1 = True
+            if item['g2']: has_any_g2 = True
             all_vals.extend(item['g1'])
             all_vals.extend(item['g2'])
         
@@ -119,6 +127,8 @@ if cond_data_list:
         y_limit = global_max * 1.35
         
         n_plots = len(cond_data_list)
+        # 凡例用のスペース確保のため、figsizeを少し調整してもいいですが、
+        # bbox_inches='tight'で保存時に自動調整されるのでこのままでOK
         fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * 3, 5), sharey=True)
         
         if n_plots == 1:
@@ -127,6 +137,7 @@ if cond_data_list:
         plt.subplots_adjust(wspace=0)
         plt.rcParams['font.family'] = 'sans-serif'
 
+        # --- 各条件ごとの描画 ---
         for i, ax in enumerate(axes):
             data = cond_data_list[i]
             g1 = np.array(data['g1'])
@@ -135,6 +146,7 @@ if cond_data_list:
             has_g1 = len(g1) > 0
             has_g2 = len(g2) > 0
             
+            # 位置決定
             if has_g1 and has_g2:
                 pos1 = -(bar_width/2 + bar_gap/2)
                 pos2 = +(bar_width/2 + bar_gap/2)
@@ -160,6 +172,7 @@ if cond_data_list:
                 noise = np.random.normal(0, 0.04 * bar_width, len(g2))
                 ax.scatter(pos2 + noise, g2, color='white', edgecolor='gray', s=dot_size, zorder=3)
 
+            # X軸ラベル
             ticks = []
             labels = []
             if has_g1:
@@ -205,10 +218,7 @@ if cond_data_list:
                 ax.spines['left'].set_visible(True)
                 ax.spines['left'].set_color('black')
                 ax.spines['left'].set_linewidth(1.2)
-                
-                # ★修正ポイント: 入力されたラベル変数を使う
                 ax.set_ylabel(y_axis_label, fontsize=14) 
-                
                 ax.tick_params(axis='y', left=True, labelleft=True, width=1.2)
             else:
                 ax.spines['left'].set_visible(False)
@@ -218,11 +228,30 @@ if cond_data_list:
             max_pos = (bar_width/2 + bar_gap/2) + bar_width/2
             ax.set_xlim(-(max_pos + margin), (max_pos + margin))
 
+        # --- ★ここが追加ポイント: 凡例 (Legend) の作成 ---
+        if show_legend:
+            legend_handles = []
+            # グループ1が存在するなら凡例に追加
+            if has_any_g1:
+                patch1 = mpatches.Patch(facecolor=color1, edgecolor='black', label=group1_name)
+                legend_handles.append(patch1)
+            # グループ2が存在するなら凡例に追加
+            if has_any_g2:
+                patch2 = mpatches.Patch(facecolor=color2, edgecolor='black', label=group2_name)
+                legend_handles.append(patch2)
+            
+            # 図全体に対して凡例を追加（グラフの外側右に配置）
+            # bbox_to_anchor=(1.05, 0.5) で「枠外の右側中央」を指定しています
+            if legend_handles:
+                fig.legend(handles=legend_handles, loc='center left', bbox_to_anchor=(0.92, 0.5), 
+                          frameon=False, fontsize=12)
+
         st.pyplot(fig)
 
         img = io.BytesIO()
+        # bbox_inches='tight' が重要で、これがあるとはみ出した凡例も含めて画像保存されます
         fig.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="final_custom_axis.png", mime="image/png")
+        st.download_button("画像をダウンロード", data=img, file_name="final_plot_with_legend.png", mime="image/png")
 
     except Exception as e:
         st.error(f"描画エラー: {e}")
