@@ -8,10 +8,11 @@ import numpy as np
 # ---------------------------------------------------------
 # 設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Bar Plot Maker (Line Fix)", layout="wide")
-st.title("📊 棒グラフ作成ツール（有意差ライン調整版）")
+st.set_page_config(page_title="Bar Plot Maker (Final Fix)", layout="wide")
+st.title("📊 棒グラフ作成ツール（幅・配置 修正版）")
 st.markdown("""
-**修正点:** 有意差ラベル（****など）の下に、適切な間隔でラインを引くように調整しました。
+**修正:** 棒グラフ同士が離れないように、グラフ全体の比率で太さを調整するように変更しました。
+プロットの位置ズレも解消されます。
 """)
 
 # セッション設定
@@ -40,11 +41,13 @@ with st.sidebar:
     st.divider()
     st.header("デザイン設定")
     st.subheader("色の設定")
-    color1 = st.color_picker("グループ1の色", "#808080")
-    color2 = st.color_picker("グループ2の色", "#69f0ae")
+    color1 = st.color_picker("グループ1の色", "#808080") # グレー
+    color2 = st.color_picker("グループ2の色", "#69f0ae") # エメラルド
     
     st.subheader("グラフの形状")
-    bar_width = st.slider("棒グラフの幅", min_value=0.1, max_value=1.0, value=0.6, step=0.1)
+    # ★修正ポイント: width（棒の幅）ではなく、aspect（グラフの横幅比率）で調整する
+    graph_aspect = st.slider("グラフ全体の横幅比率 (太さ調整)", min_value=0.3, max_value=1.5, value=0.6, step=0.1)
+    
     cap_size = st.slider("エラーバーの横線 (Capsize)", min_value=0.0, max_value=0.5, value=0.1, step=0.05)
 
 # ---------------------------------------------------------
@@ -111,7 +114,7 @@ if cond_data_list:
     order_list = [item['name'] for item in cond_data_list]
 
     global_max_val = final_df['Value'].max()
-    y_limit = global_max_val * 1.35 # 少し余裕を増やす
+    y_limit = global_max_val * 1.35 
 
     st.subheader("プレビュー")
     
@@ -120,6 +123,7 @@ if cond_data_list:
         plt.rcParams['xtick.direction'] = 'out'
         plt.rcParams['ytick.direction'] = 'out'
         
+        # ★修正ポイント: aspectで横幅を制御し、width引数は削除（デフォルト0.8を使う）
         g = sns.catplot(
             data=final_df, 
             kind="bar", 
@@ -129,12 +133,15 @@ if cond_data_list:
             edgecolor='black', 
             capsize=cap_size,
             errwidth=1.5, ci='sd',
-            width=bar_width,
-            height=5, aspect=0.6, 
+            # width=bar_width,  <-- これを削除（これが隙間の原因でした）
+            height=5, 
+            aspect=graph_aspect, # <-- ここで太さを調整
             sharey=False,
-            legend=False
+            legend=False,
+            dodge=True # 念のため明示（デフォルトTrueですが）
         )
 
+        # プロット（点）の設定
         g.map_dataframe(sns.stripplot, x='Group', y='Value', hue='Group',
                         palette=['white', 'white'], edgecolor='gray', 
                         linewidth=1, size=6, jitter=True, dodge=True)
@@ -148,7 +155,6 @@ if cond_data_list:
             # 枠線設定
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
-            
             ax.spines['bottom'].set_visible(True)
             ax.spines['bottom'].set_color('black')
             ax.spines['bottom'].set_linewidth(1.2)
@@ -165,45 +171,32 @@ if cond_data_list:
                 ax.yaxis.set_visible(False)
                 ax.set_ylabel("")
             
-            # --- ★有意差ラインの描画修正★ ---
+            # --- 有意差ライン ---
             if i < len(cond_data_list):
                 meta = cond_data_list[i]
                 sig_text = meta['sig']
                 if sig_text:
                     d = meta['df']
                     this_max = d['Value'].max()
-                    
-                    # 線の高さ（バーの最大値より少し上）
                     y_line = this_max * 1.15 
-                    
-                    # 線からさらに少し上に文字を置くためのオフセット
                     text_offset = this_max * 0.05 
-                    
-                    # 線の両端の「下向きのヒゲ」の長さ
                     h = this_max * 0.03
 
                     groups_in_this_cond = d['Group'].unique()
                     
-                    # グループが2つあるなら、その間を結ぶ線を描く
                     if len(groups_in_this_cond) >= 2:
-                        # x=0 (左のバー) と x=1 (右のバー) を結ぶ
+                        # 2群ある場合
                         line_x_start = 0
                         line_x_end = 1
-                        
-                        # ブラケット（コの字型の線）を描画
-                        # (x0, y-h) -> (x0, y) -> (x1, y) -> (x1, y-h)
-                        ax.plot(
-                            [line_x_start, line_x_start, line_x_end, line_x_end], 
-                            [y_line - h, y_line, y_line, y_line - h], 
-                            lw=1.5, c='k'
-                        )
-                        
-                        # 文字を線の少し上に置く (y_line + text_offset)
+                        ax.plot([line_x_start, line_x_start, line_x_end, line_x_end], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
                         ax.text(0.5, y_line + text_offset, sig_text, ha='center', va='bottom', color='k', fontsize=16)
-                    
                     else:
-                        # 1群しかない場合は、バーの真上に文字だけ（または短い線）
-                        ax.text(0, y_line, sig_text, ha='center', va='bottom', color='k', fontsize=16)
+                        # 1群の場合: デフォルトのバー幅（0.8）に合わせて線を引く
+                        w = 0.8 / 2 # barplotのデフォルト幅は0.8
+                        line_x_start = -w
+                        line_x_end = w
+                        ax.plot([line_x_start, line_x_start, line_x_end, line_x_end], [y_line-h, y_line, y_line, y_line-h], lw=1.5, c='k')
+                        ax.text(0, y_line + text_offset, sig_text, ha='center', va='bottom', color='k', fontsize=16)
 
         plt.subplots_adjust(wspace=0)
 
@@ -211,7 +204,7 @@ if cond_data_list:
 
         img = io.BytesIO()
         g.figure.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="final_line_fix.png", mime="image/png")
+        st.download_button("画像をダウンロード", data=img, file_name="final_plot_fixed.png", mime="image/png")
 
     except Exception as e:
         st.error(f"描画エラー: {e}")
