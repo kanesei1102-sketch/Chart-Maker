@@ -138,7 +138,7 @@ if cond_data_list:
         fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * 3.5, fig_height), sharey=True)
         if n_plots == 1: axes = [axes]
         
-        plt.subplots_adjust(wspace=wspace_val)
+        plt.subplots_adjust(wspace=0)
         plt.rcParams['font.family'] = 'sans-serif'
         fig.suptitle(fig_title, fontsize=16, y=1.05)
 
@@ -227,6 +227,9 @@ if cond_data_list:
             else:
                 ax.spines['left'].set_visible(False)
                 ax.tick_params(axis='y', left=False)
+            if i > 0:
+                ax.spines['left'].set_visible(False)
+                ax.tick_params(axis='y', left=False) 
 
             # 表示範囲の自動調整（要素の切見防止）
             view_margin = 0.5
