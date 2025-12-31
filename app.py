@@ -9,10 +9,10 @@ import datetime
 # ---------------------------------------------------------
 # ページ基本設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Sci-Graph Maker Pro Max (Fixed)", layout="wide")
-st.title("📊 Sci-Graph Maker: ハイブリッド・ワークフロー")
+st.set_page_config(page_title="Sci-Graph Maker Pro Max (Final)", layout="wide")
+st.title("📊 Sci-Graph Maker: プロフェッショナル・ワークフロー")
 st.markdown("""
-**完全版:** 全てのレイアウト調整機能（幅・隙間・エラーバー）を復活させ、CSV連携と手動入力を統合しました。
+**最終決定版:** グラフの幅、高さ、条件間の距離、棒の太さまで、全てのレイアウトパラメータをスライダーで直感的に調整可能です。
 """)
 
 # セッション状態
@@ -30,9 +30,8 @@ def remove_condition():
 # サイドバー設定
 # ---------------------------------------------------------
 with st.sidebar:
-    st.header("1. グラフ全体設定")
+    st.header("1. グラフ種類・統計設定")
     graph_type = st.selectbox("グラフの種類:", ["棒グラフ (Bar)", "箱ひげ図 (Box)", "バイオリン図 (Violin)"])
-    
     if "棒グラフ" in graph_type:
         error_bar_type = st.radio("エラーバーの種類:", ["SD (標準偏差)", "SEM (標準誤差)"])
     
@@ -41,8 +40,7 @@ with st.sidebar:
     manual_y_max = st.number_input("Y軸の最大値を固定 (0で自動)", value=0.0)
 
     st.divider()
-    st.header("2. デザインとスタイル")
-    
+    st.header("2. デザインと凡例")
     with st.expander("🎨 色と凡例の名前", expanded=True):
         group1_name = st.text_input("グループ1の名前", value="Control")
         color1 = st.color_picker("グループ1の色", "#999999") 
@@ -52,11 +50,22 @@ with st.sidebar:
         st.divider()
         show_legend = st.checkbox("凡例を表示する", value=True)
 
-    with st.expander("📏 レイアウト調整 (復活)", expanded=True):
-        # ★ここが復活・連動する変数です
-        width_val = st.slider("棒/箱の幅", 0.2, 1.0, 0.6, 0.1)
-        gap_val = st.slider("グループ間の隙間", 0.0, 0.5, 0.05, 0.01)
+    # ★ここが復活・強化されたレイアウト調整セクションです
+    st.divider()
+    st.header("3. レイアウト完全制御")
+    with st.expander("📏 グラフのサイズと距離", expanded=True):
+        st.subheader("要素の太さ")
+        width_val = st.slider("棒/箱の幅 (Width)", 0.1, 1.2, 0.6, 0.1)
+        gap_val = st.slider("グループ間の隙間 (Gap)", 0.0, 0.5, 0.05, 0.01)
         cap_size_val = st.slider("エラーバーの横線幅", 0.0, 10.0, 5.0, 0.5)
+        
+        st.divider()
+        st.subheader("図全体のサイズ感")
+        # 1条件あたりの幅を変えることで、グラフ全体の幅を制御します
+        fig_width_per_plot = st.slider("1条件あたりの横幅", 1.0, 10.0, 3.5, 0.5)
+        fig_height = st.slider("グラフ全体の高さ", 3.0, 12.0, 5.0, 0.5)
+        # グラフ（サブプロット）同士の距離を制御します
+        wspace_val = st.slider("条件（グラフ）間の距離", 0.0, 1.0, 0.1, 0.05)
 
     with st.expander("✨ プロット(点)の微調整"):
         show_points = st.checkbox("個別データ点を表示する", value=True)
@@ -68,7 +77,6 @@ with st.sidebar:
 # データ入力セクション
 # ---------------------------------------------------------
 cond_data_list = [] 
-
 st.header("📂 Step 1: CSVデータの読み込み")
 uploaded_csv = st.file_uploader("CSVを選択", type="csv")
 if uploaded_csv:
@@ -99,15 +107,18 @@ for i in range(st.session_state.cond_count):
         except: pass
 
 # ---------------------------------------------------------
-# 描画セクション (修正済み)
+# 描画セクション (レイアウト変数を完全適用)
 # ---------------------------------------------------------
 if cond_data_list:
     st.divider()
     try:
         n_plots = len(cond_data_list)
-        fig, axes = plt.subplots(1, n_plots, figsize=(max(n_plots * 3.5, 5), 5), sharey=True)
+        # ★ fig_width_per_plot と fig_height を適用
+        fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * fig_width_per_plot, fig_height), sharey=True)
         if n_plots == 1: axes = [axes]
-        plt.subplots_adjust(wspace=0.1)
+        
+        # ★ wspace_val (条件間の距離) を適用
+        plt.subplots_adjust(wspace=wspace_val)
         fig.suptitle(fig_title, fontsize=16, y=1.08)
 
         all_vals = []
@@ -118,7 +129,7 @@ if cond_data_list:
             data = cond_data_list[i]
             g1, g2 = np.array(data['g1']), np.array(data['g2'])
             
-            # ★スライダーの変数 (width_val, gap_val) を適用
+            # ★ width_val と gap_val を適用して配置計算
             pos1, pos2 = (-(width_val/2 + gap_val/2), +(width_val/2 + gap_val/2)) if len(g1)>0 and len(g2)>0 else (0, 0)
 
             def draw_element(ax, pos, vals, color):
@@ -127,7 +138,6 @@ if cond_data_list:
                     mean = np.mean(vals)
                     err = np.std(vals, ddof=1)
                     if error_bar_type == "SEM (標準誤差)": err /= np.sqrt(len(vals))
-                    # ★width_val と cap_size_val を適用
                     ax.bar(pos, mean, width=width_val, color=color, edgecolor='black', zorder=1)
                     ax.errorbar(pos, mean, yerr=err, fmt='none', color='black', capsize=cap_size_val, zorder=2)
                 elif "箱ひげ図" in graph_type:
@@ -147,18 +157,17 @@ if cond_data_list:
             ax.set_xticklabels([group1_name, group2_name] if len(g1)>0 and len(g2)>0 else [""], fontsize=9)
             ax.set_title(data['name'], fontsize=11, pad=10)
             ax.set_ylim(0, y_limit)
-            ax.spines['top'].set_visible(False)
-            ax.spines['right'].set_visible(False)
+            ax.spines['top'].set_visible(False); ax.spines['right'].set_visible(False)
             if i == 0: ax.set_ylabel(y_axis_label, fontsize=12)
             else: ax.spines['left'].set_visible(False); ax.tick_params(axis='y', left=False)
 
         if show_legend:
             handles = [mpatches.Patch(facecolor=color1, label=group1_name), mpatches.Patch(facecolor=color2, label=group2_name)]
-            fig.legend(handles=handles, loc='center left', bbox_to_anchor=(0.98, 0.5), frameon=False)
+            fig.legend(handles=handles, loc='center left', bbox_to_anchor=(1.02, 0.5), frameon=False)
         st.pyplot(fig)
         
         buf = io.BytesIO()
         fig.savefig(buf, format='png', bbox_inches='tight', dpi=300)
         now = datetime.datetime.now() + datetime.timedelta(hours=9)
-        st.download_button("画像を保存", buf, f"graph_{now.strftime('%Y%m%d_%H%M%S')}.png")
+        st.download_button("グラフ画像を保存", buf, f"graph_{now.strftime('%Y%m%d_%H%M%S')}.png")
     except Exception as e: st.error(f"Error: {e}")
