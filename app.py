@@ -75,6 +75,18 @@ with st.sidebar:
         dot_size = st.slider("点のサイズ", 1, 200, 20) 
         dot_alpha = st.slider("点の透明度 (Alpha)", 0.1, 1.0, 0.6, 0.1)
         jitter_strength = st.slider("散らばり具合 (Jitter)", 0.0, 0.5, 0.04, 0.01)
+        # --- サイドバーの最後の方に追加 ---
+    with st.sidebar:
+        st.divider()
+        st.caption("【免責事項 / Disclaimer】")
+        st.caption("""
+        本ツールは統計データの可視化を目的としています。
+        表示される有意差ラベルやグラフの形状は、入力された数値に基づいて自動生成されるものであり、
+        その生物学的・科学的な妥当性については、利用者が専門的知見に基づいて判断してください。
+    
+        This tool is for data visualization purposes. Final interpretations 
+        should be made by the user based on professional expertise.
+        """)
 
 # ---------------------------------------------------------
 # 3. データ処理パイプライン (ハイブリッド形式)
