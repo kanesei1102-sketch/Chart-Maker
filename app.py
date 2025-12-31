@@ -49,11 +49,21 @@ with st.sidebar:
         color1 = st.color_picker("グループ1の色", "#999999")
         color2 = st.color_picker("グループ2の色", "#66c2a5")
         show_legend = st.checkbox("凡例を表示する", value=True)
+        # サイドバー内に追加
+        graph_type = st.selectbox("グラフの種類", ["棒グラフ", "箱ひげ図", "バイオリン図"])
+
+        # 棒グラフの時だけ統計オプションを出す
+        if graph_type == "棒グラフ":
+            error_type = st.radio("エラーバーの種類", ["SD (標準偏差)", "SEM (標準誤差)"])
 
     with st.expander("📏 棒グラフの形状", expanded=True):
         bar_width = st.slider("棒の幅", 0.2, 1.0, 0.6, 0.1)
         bar_gap = st.slider("棒間の隙間", 0.0, 0.5, 0.05, 0.01)
         cap_size = st.slider("エラーバー幅", 0.0, 10.0, 5.0, 0.5)
+        # 「📏 棒グラフの形状」expander内に追加
+        st.divider()
+        fig_height = st.slider("グラフ全体の高さ", 3.0, 10.0, 5.0, 0.5)
+        wspace_val = st.slider("条件間の余白 (wspace)", 0.0, 1.0, 0.0, 0.05)
 
     with st.expander("✨ プロット(点)の微調整", expanded=True):
         st.info("データ数が多い時は、サイズを小さく、透明度を上げてください。")
@@ -127,11 +137,11 @@ if cond_data_list:
         y_limit = global_max * 1.35
         
         n_plots = len(cond_data_list)
-        fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * 3, 5), sharey=True)
+        fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * 3, fig_height), sharey=True)
         
         if n_plots == 1: axes = [axes]
             
-        plt.subplots_adjust(wspace=0)
+        plt.subplots_adjust(wspace=wspace_val)
         plt.rcParams['font.family'] = 'sans-serif'
 
         # --- 各条件ごとの描画 ---
@@ -151,24 +161,39 @@ if cond_data_list:
 
             # 共通描画関数
             def plot_group(ax, pos, vals, color):
-                if len(vals) == 0: return
-                mean = np.mean(vals)
-                std = np.std(vals, ddof=1) if len(vals) > 1 else 0
-                
-                # 棒グラフ
+            if len(vals) == 0: return
+    
+            # --- 1. 統計量の計算 ---
+            mean = np.mean(vals)
+            std = np.std(vals, ddof=1) if len(vals) > 1 else 0
+    
+            # SD/SEMの切り替え（棒グラフ用）
+            if graph_type == "棒グラフ" and error_type == "SEM (標準誤差)":
+                err_val = std / np.sqrt(len(vals))
+            else:
+                err_val = std
+
+            # --- 2. メイン図形の描画 ---
+            if graph_type == "棒グラフ":
                 ax.bar(pos, mean, width=bar_width, color=color, edgecolor='black', zorder=1)
-                # エラーバー
-                ax.errorbar(pos, mean, yerr=std, fmt='none', color='black', capsize=cap_size, elinewidth=1.5, zorder=2)
-                
-                # プロット (Jitter & Alpha適用)
-                # データ数に応じてnoiseを生成
-                noise = np.random.normal(0, jitter_strength * bar_width, len(vals))
-                
-                # ドットの枠線を、サイズが小さい時は消す（見栄えのため）
-                edge_c = 'gray' if dot_size > 10 else 'none'
-                
-                ax.scatter(pos + noise, vals, color='white', edgecolor=edge_c, 
-                           s=dot_size, alpha=dot_alpha, zorder=3)
+                ax.errorbar(pos, mean, yerr=err_val, fmt='none', color='black', capsize=cap_size, elinewidth=1.5, zorder=2)
+    
+            elif graph_type == "箱ひげ図":
+                # widths=bar_width を指定することで、スライダーと太さが連動します
+                ax.boxplot(vals, positions=[pos], widths=bar_width, patch_artist=True,
+                           showfliers=False, 
+                           boxprops=dict(facecolor=color, color='black'),
+                           medianprops=dict(color='black', linewidth=1.5),
+                           zorder=1)
+    
+            elif graph_type == "バイオリン図":
+                # widths=bar_width を指定
+                parts = ax.violinplot(vals, positions=[pos], widths=bar_width, showextrema=False)
+                for pc in parts['bodies']:
+                    pc.set_facecolor(color)
+                    pc.set_edgecolor('black')
+                    pc.set_alpha(0.7)
+                    pc.set_zorder(1)
 
             # Group 1
             plot_group(ax, pos1, g1, color1)
@@ -218,7 +243,7 @@ if cond_data_list:
                 ax.spines['left'].set_visible(False)
                 ax.tick_params(axis='y', left=False, labelleft=False)
 
-            margin = 0.5
+            margin = 0.8 
             max_pos = (bar_width/2 + bar_gap/2) + bar_width/2
             ax.set_xlim(-(max_pos + margin), (max_pos + margin))
 
