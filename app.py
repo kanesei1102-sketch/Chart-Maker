@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches # 凡例用
 import io
 import numpy as np
+import datetime
 
 # ---------------------------------------------------------
 # 設定
@@ -250,8 +251,13 @@ if cond_data_list:
 
         img = io.BytesIO()
         # bbox_inches='tight' が重要で、これがあるとはみ出した凡例も含めて画像保存されます
-        fig.savefig(img, format='png', bbox_inches='tight')
-        st.download_button("画像をダウンロード", data=img, file_name="final_plot_with_legend.png", mime="image/png")
+        fig.savefig(img, format='png', bbox_inches='tight', dpi=300) 
+        
+        # --- ここが修正点：日本時間(JST)のファイル名を生成 ---
+        now = datetime.datetime.now() + datetime.timedelta(hours=9)
+        file_name = f"graph_{now.strftime('%Y%m%d_%H%M%S')}.png"
+        
+        st.download_button("画像をダウンロード", data=img, file_name=file_name, mime="image/png")
 
     except Exception as e:
         st.error(f"描画エラー: {e}")
