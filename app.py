@@ -7,12 +7,12 @@ import numpy as np
 import datetime
 
 # ---------------------------------------------------------
-# 1. ページ構成と外観設定
+# 1. ページ構成とセッション管理
 # ---------------------------------------------------------
 st.set_page_config(page_title="Sci-Graph Maker Pro", layout="wide")
-st.title("📊 Sci-Graph Maker Pro (完全統合版)")
+st.title("📊 Sci-Graph Maker Pro (日本語版)")
 st.markdown("""
-**データ整合性とプロフェッショナルな可視化:** 解析ツールCSV連携、ハイブリッド入力、論文投稿クオリティの微調整機能を完備した最終形態です。
+**データの完全性と専門的な可視化:** 画像解析ツールのCSV連携、ハイブリッド入力、そして論文投稿クオリティのレイアウト制御を統合。
 """)
 
 # セッション管理（動的な条件追加用）
@@ -33,28 +33,28 @@ with st.sidebar:
     st.header("🛠️ 全体設定")
     
     with st.expander("📈 グラフ種類と統計", expanded=True):
-        graph_type = st.selectbox("グラフの種類", ["棒グラフ (平均値)", "箱ひげ図 (中央値)", "バイオリン図 (分布密度)"])
+        graph_type = st.selectbox("グラフの種類", ["棒グラフ (平均値)", "箱ひげ図 (中央値)", "バイオリン図 (分布)"])
         if "棒" in graph_type:
             error_type = st.radio("エラーバーの種類", ["SD (標準偏差)", "SEM (標準誤差)"])
         
         fig_title = st.text_input("図のタイトル", value="Experimental Result")
-        y_axis_label = st.text_input("Y軸のタイトル", value="Relative Intensity (%)")
+        y_axis_label = st.text_input("Y軸のラベル", value="Relative Intensity (%)")
         manual_y_max = st.number_input("Y軸の最大値を固定 (0で自動)", value=0.0)
 
     st.divider()
     st.header("📂 データソース")
     # CSVインテグリティ・モジュール
-    uploaded_csv = st.file_uploader("解析ツールのCSVを読み込む", type="csv")
+    uploaded_csv = st.file_uploader("解析ツールから出力したCSVをアップロード", type="csv")
     
-    st.subheader("手動入力コントロール")
+    st.subheader("手動データ入力")
     st.button("＋ 条件を追加", on_click=add_condition)
     if st.session_state.cond_count > 1:
         st.button("－ 条件を削除", on_click=remove_condition)
 
     st.divider()
-    st.header("🎨 デザインと外観")
+    st.header("🎨 デザインと配色")
     
-    with st.expander("配色とラベル", expanded=True):
+    with st.expander("ラベルと色", expanded=True):
         group1_name = st.text_input("グループ1の名前", value="Control")
         color1 = st.color_picker("グループ1の色", "#999999")
         group2_name = st.text_input("グループ2の名前", value="Target")
@@ -67,7 +67,8 @@ with st.sidebar:
         cap_size = st.slider("エラーバーの横線幅", 0.0, 15.0, 5.0, 0.5)
         st.divider()
         fig_height = st.slider("グラフ全体の高さ", 3.0, 15.0, 5.0, 0.5)
-        wspace_val = st.slider("グラフ間の余白 (wspace)", 0.0, 1.0, 0.1, 0.05)
+        # 軸を繋げるためのwspace（0推奨）
+        wspace_val = st.slider("条件間の余白 (wspace)", 0.0, 1.0, 0.0, 0.05)
 
     with st.expander("✨ 個別プロット (点) の微調整"):
         show_points = st.checkbox("個別データ点を表示", value=True)
@@ -88,9 +89,9 @@ if uploaded_csv:
             for g_name in csv_df['Group'].unique():
                 g_vals = csv_df[csv_df['Group'] == g_name]['Value'].dropna().tolist()
                 cond_data_list.append({'name': g_name, 'g1': g_vals, 'g2': [], 'sig': ""})
-            st.sidebar.success(f"CSVから {len(csv_df['Group'].unique())} グループ読み込みました")
+            st.sidebar.success(f"CSVから {len(csv_df['Group'].unique())} グループを読み込みました")
     except Exception as e:
-        st.sidebar.error(f"CSVエラー: {e}")
+        st.sidebar.error(f"CSV読み込みエラー: {e}")
 
 # B. 手動入力（動的処理）
 for i in range(st.session_state.cond_count):
@@ -114,14 +115,14 @@ for i in range(st.session_state.cond_count):
             def_v2 = "80\n75\n85\n82" if i == 0 and not uploaded_csv else ""
             input2 = st.text_area(f"データ2", value=def_v2, height=100, key=f"d2_{i}", label_visibility="collapsed")
 
-        # 堅牢なパース処理（カンマや改行に対応）
+        # パース処理（カンマや改行に対応）
         v1, v2 = [], []
         if input1:
             try: v1 = [float(x.strip()) for x in input1.replace(',', '\n').split('\n') if x.strip()]
-            except: st.error(f"入力エラー: {cond_name} - {group1_name}")
+            except: st.error(f"形式エラー: {cond_name} - {group1_name}")
         if input2:
             try: v2 = [float(x.strip()) for x in input2.replace(',', '\n').split('\n') if x.strip()]
-            except: st.error(f"入力エラー: {cond_name} - {group2_name}")
+            except: st.error(f"形式エラー: {cond_name} - {group2_name}")
         
         if v1 or v2:
             cond_data_list.append({'name': cond_name, 'g1': v1, 'g2': v2, 'sig': sig_label})
@@ -133,7 +134,7 @@ if cond_data_list:
     st.subheader("グラフ・プレビュー")
     try:
         n_plots = len(cond_data_list)
-        # 条件数に応じてキャンバス幅を動的に計算
+        # 条件数に応じてキャンバス幅を動的に決定
         fig, axes = plt.subplots(1, n_plots, figsize=(n_plots * 3.5, fig_height), sharey=True)
         if n_plots == 1: axes = [axes]
         
@@ -157,46 +158,46 @@ if cond_data_list:
             g1, g2 = np.array(data['g1']), np.array(data['g2'])
             h_g1, h_g2 = len(g1) > 0, len(g2) > 0
             
-            # 要素の太さと隙間を座標マッピングに正確に連動
+            # 要素の太さと隙間に基づく座標マッピング
             pos1, pos2 = (-(bar_width/2 + bar_gap/2), +(bar_width/2 + bar_gap/2)) if h_g1 and h_g2 else (0, 0)
 
-            def plot_core(ax, pos, vals, color):
+            def plot_core_internal(ax, pos, vals, color):
                 if len(vals) == 0: return
                 
                 mean_v = np.mean(vals)
                 std_v = np.std(vals, ddof=1) if len(vals) > 1 else 0
                 
                 # 統計オプションの分岐
-                if "棒" in graph_type and "SEM" in error_type:
+                if "棒グラフ" in graph_type and "SEM" in error_type:
                     err_v = std_v / np.sqrt(len(vals))
                 else:
                     err_v = std_v
 
-                # グラフ形状の分岐
-                if "棒" in graph_type:
+                # 形状別の描画
+                if "棒グラフ" in graph_type:
                     ax.bar(pos, mean_v, width=bar_width, color=color, edgecolor='black', linewidth=1.2, zorder=1)
                     ax.errorbar(pos, mean_v, yerr=err_v, fmt='none', color='black', capsize=cap_size, elinewidth=1.5, zorder=2)
-                elif "箱" in graph_type:
+                elif "箱ひげ図" in graph_type:
                     ax.boxplot(vals, positions=[pos], widths=bar_width, patch_artist=True, showfliers=False,
                                boxprops=dict(facecolor=color, color='black', linewidth=1.2),
                                medianprops=dict(color='black', linewidth=1.5),
                                whiskerprops=dict(linewidth=1.2), capprops=dict(linewidth=1.2), zorder=1)
-                elif "バイオリン" in graph_type:
+                elif "バイオリン図" in graph_type:
                     v_parts = ax.violinplot(vals, positions=[pos], widths=bar_width, showextrema=False)
                     for pc in v_parts['bodies']:
                         pc.set_facecolor(color); pc.set_edgecolor('black'); pc.set_alpha(0.7); pc.set_zorder(1)
 
-                # 個別ドット描画（ユニバーサル・オーバーレイ）
+                # 個別ドット（ユニバーサル・オーバーレイ）
                 if show_points:
                     noise = np.random.normal(0, jitter_strength * bar_width, len(vals))
                     edge_c = 'gray' if dot_size > 15 else 'none'
                     ax.scatter(pos + noise, vals, color='white', edgecolor=edge_c, s=dot_size, alpha=dot_alpha, zorder=3)
 
-            # 描画実行
-            plot_core(ax, pos1, g1, color1)
-            plot_core(ax, pos2, g2, color2)
+            # 実行
+            plot_core_internal(ax, pos1, g1, color1)
+            plot_core_internal(ax, pos2, g2, color2)
 
-            # 軸とラベルの整合性
+            # 軸と目盛りの設定
             tks, lbs = [], []
             if h_g1: tks.append(pos1); lbs.append(group1_name)
             if h_g2: tks.append(pos2); lbs.append(group2_name)
@@ -205,19 +206,21 @@ if cond_data_list:
             ax.set_title(data['name'], fontsize=12, pad=12)
             ax.set_ylim(0, y_max_limit)
 
-            # 有意差ブラケット（動的調整）
+            # 有意差ラベルの動的配置
             if data['sig']:
                 c_max = max([max(g1) if h_g1 else 0, max(g2) if h_g2 else 0])
-                y_l = c_max * 1.15
-                h_b = c_max * 0.03
+                y_bracket = c_max * 1.15
+                bracket_h = c_max * 0.03
                 lx_s, lx_e = (pos1, pos2) if h_g1 and h_g2 else (pos1-0.2, pos1+0.2)
-                ax.plot([lx_s, lx_s, lx_e, lx_e], [y_l-h_b, y_l, y_l, y_l-h_b], lw=1.5, c='k')
-                ax.text((lx_s+lx_e)/2, y_l + c_max*0.02, data['sig'], ha='center', va='bottom', fontsize=14)
+                ax.plot([lx_s, lx_s, lx_e, lx_e], [y_bracket-bracket_h, y_bracket, y_bracket, y_bracket-bracket_h], lw=1.5, c='k')
+                ax.text((lx_s+lx_e)/2, y_bracket + c_max*0.02, data['sig'], ha='center', va='bottom', fontsize=14)
 
-            # 枠線のスタイリング（論文品質）
+            # 枠線（Spines）のスタイリング
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
-            ax.spines['bottom'].set_linewidth(1.2)
+            ax.spines['bottom'].set_linewidth(1.5)
+            ax.spines['bottom'].set_visible(True)
+            ax.spines['bottom'].set_color('black')
             if i == 0:
                 ax.set_ylabel(y_axis_label, fontsize=14)
                 ax.spines['left'].set_linewidth(1.2)
@@ -225,10 +228,10 @@ if cond_data_list:
                 ax.spines['left'].set_visible(False)
                 ax.tick_params(axis='y', left=False)
 
-            # 要素の太さに合わせてカメラの表示範囲を動的に調整
-            mg = 0.8
-            mx_c = (bar_width/2 + bar_gap/2) + bar_width/2
-            ax.set_xlim(-(mx_c + mg), (mx_c + mg))
+            # 表示範囲の自動調整（要素の切見防止）
+            view_margin = 0.5
+            edge_coord = (bar_width/2 + bar_gap/2) + bar_width/2
+            ax.set_xlim(-(edge_coord + view_margin), (edge_coord + view_margin))
 
         # 凡例モジュール
         if show_legend:
@@ -239,7 +242,7 @@ if cond_data_list:
 
         st.pyplot(fig)
 
-        # JST日本時間タイムスタンプによる高品質画像保存
+        # 日本時間（JST）タイムスタンプによる画像保存
         img_buf = io.BytesIO()
         fig.savefig(img_buf, format='png', bbox_inches='tight', dpi=300)
         now_jst = datetime.datetime.now() + datetime.timedelta(hours=9)
@@ -249,4 +252,4 @@ if cond_data_list:
     except Exception as e:
         st.error(f"描画エラー: {e}")
 else:
-    st.info("待機中: CSVを読み込むか、手動でデータを入力してグラフを生成してください。")
+    st.info("データ待機中: CSVをアップロードするか、手動でデータを入力してグラフを生成してください。")
