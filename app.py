@@ -159,41 +159,49 @@ if cond_data_list:
             else:
                 pos1, pos2 = 0, 0
 
-            # 共通描画関数
+            # --- 描画関数：ここを丸ごと入れ替えてください ---
             def plot_group(ax, pos, vals, color):
-            if len(vals) == 0: return
-    
-            # --- 1. 統計量の計算 ---
-            mean = np.mean(vals)
-            std = np.std(vals, ddof=1) if len(vals) > 1 else 0
-    
-            # SD/SEMの切り替え（棒グラフ用）
-            if graph_type == "棒グラフ" and error_type == "SEM (標準誤差)":
-                err_val = std / np.sqrt(len(vals))
-            else:
-                err_val = std
+                if len(vals) == 0: 
+                    return
+                
+                # --- 1. 統計量の計算 ---
+                mean = np.mean(vals)
+                std = np.std(vals, ddof=1) if len(vals) > 1 else 0
+                
+                # SD/SEMの切り替え（棒グラフ用）
+                if graph_type == "棒グラフ" and error_type == "SEM (標準誤差)":
+                    err_val = std / np.sqrt(len(vals))
+                else:
+                    err_val = std
 
-            # --- 2. メイン図形の描画 ---
-            if graph_type == "棒グラフ":
-                ax.bar(pos, mean, width=bar_width, color=color, edgecolor='black', zorder=1)
-                ax.errorbar(pos, mean, yerr=err_val, fmt='none', color='black', capsize=cap_size, elinewidth=1.5, zorder=2)
-    
-            elif graph_type == "箱ひげ図":
-                # widths=bar_width を指定することで、スライダーと太さが連動します
-                ax.boxplot(vals, positions=[pos], widths=bar_width, patch_artist=True,
-                           showfliers=False, 
-                           boxprops=dict(facecolor=color, color='black'),
-                           medianprops=dict(color='black', linewidth=1.5),
-                           zorder=1)
-    
-            elif graph_type == "バイオリン図":
-                # widths=bar_width を指定
-                parts = ax.violinplot(vals, positions=[pos], widths=bar_width, showextrema=False)
-                for pc in parts['bodies']:
-                    pc.set_facecolor(color)
-                    pc.set_edgecolor('black')
-                    pc.set_alpha(0.7)
-                    pc.set_zorder(1)
+                # --- 2. メイン図形の描画 (ここで種類を分岐) ---
+                if graph_type == "棒グラフ":
+                    ax.bar(pos, mean, width=bar_width, color=color, edgecolor='black', zorder=1)
+                    ax.errorbar(pos, mean, yerr=err_val, fmt='none', color='black', capsize=cap_size, elinewidth=1.5, zorder=2)
+                
+                elif graph_type == "箱ひげ図":
+                    # widths=bar_width を指定することでスライダーと連動
+                    ax.boxplot(vals, positions=[pos], widths=bar_width, patch_artist=True,
+                               showfliers=False, 
+                               boxprops=dict(facecolor=color, color='black'),
+                               medianprops=dict(color='black', linewidth=1.5),
+                               zorder=1)
+                
+                elif graph_type == "バイオリン図":
+                    # widths=bar_width を指定
+                    parts = ax.violinplot(vals, positions=[pos], widths=bar_width, showextrema=False)
+                    for pc in parts['bodies']:
+                        pc.set_facecolor(color)
+                        pc.set_edgecolor('black')
+                        pc.set_alpha(0.7)
+                        pc.set_zorder(1)
+
+                # --- 3. 個別ドット (共通) ---
+                noise = np.random.normal(0, jitter_strength * bar_width, len(vals))
+                edge_c = 'gray' if dot_size > 10 else 'none'
+                ax.scatter(pos + noise, vals, color='white', edgecolor=edge_c, 
+                           s=dot_size, alpha=dot_alpha, zorder=3)
+            # --- ここまでが関数の中身（インデントが必要な範囲） ---
 
             # Group 1
             plot_group(ax, pos1, g1, color1)
