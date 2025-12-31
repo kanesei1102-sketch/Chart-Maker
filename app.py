@@ -9,13 +9,13 @@ import datetime
 # ---------------------------------------------------------
 # ページ基本設定
 # ---------------------------------------------------------
-st.set_page_config(page_title="Sci-Graph Maker Pro Max (Hybrid)", layout="wide")
+st.set_page_config(page_title="Sci-Graph Maker Pro Max (Fixed)", layout="wide")
 st.title("📊 Sci-Graph Maker: ハイブリッド・ワークフロー")
 st.markdown("""
-**ハイブリッド仕様:** 解析ツールのCSVを読み込みつつ、不足している条件を手動で自由に追加できます。
+**完全版:** 全てのレイアウト調整機能（幅・隙間・エラーバー）を復活させ、CSV連携と手動入力を統合しました。
 """)
 
-# セッション状態（手動入力の列数管理）
+# セッション状態
 if 'cond_count' not in st.session_state:
     st.session_state.cond_count = 0 
 
@@ -44,17 +44,19 @@ with st.sidebar:
     st.header("2. デザインとスタイル")
     
     with st.expander("🎨 色と凡例の名前", expanded=True):
-        # ★ここを修正：名前を自由に変えられるように復活させました
         group1_name = st.text_input("グループ1の名前", value="Control")
         color1 = st.color_picker("グループ1の色", "#999999") 
-        
         st.divider()
-        
         group2_name = st.text_input("グループ2の名前", value="Target")
         color2 = st.color_picker("グループ2の色", "#66c2a5") 
-        
         st.divider()
         show_legend = st.checkbox("凡例を表示する", value=True)
+
+    with st.expander("📏 レイアウト調整 (復活)", expanded=True):
+        # ★ここが復活・連動する変数です
+        width_val = st.slider("棒/箱の幅", 0.2, 1.0, 0.6, 0.1)
+        gap_val = st.slider("グループ間の隙間", 0.0, 0.5, 0.05, 0.01)
+        cap_size_val = st.slider("エラーバーの横線幅", 0.0, 10.0, 5.0, 0.5)
 
     with st.expander("✨ プロット(点)の微調整"):
         show_points = st.checkbox("個別データ点を表示する", value=True)
@@ -63,76 +65,48 @@ with st.sidebar:
         jitter_strength = st.slider("散らばり具合 (Jitter)", 0.0, 0.3, 0.04)
 
 # ---------------------------------------------------------
-# メイン：データ入力セクション
+# データ入力セクション
 # ---------------------------------------------------------
 cond_data_list = [] 
 
-# --- A. CSVアップロードセクション ---
-st.header("📂 Step 1: CSVデータの読み込み (任意)")
-uploaded_csv = st.file_uploader("解析ツールから出力したCSVを選択してください", type="csv")
-
+st.header("📂 Step 1: CSVデータの読み込み")
+uploaded_csv = st.file_uploader("CSVを選択", type="csv")
 if uploaded_csv:
     ext_df = pd.read_csv(uploaded_csv)
     for g_name in ext_df['Group'].unique():
         g_data = ext_df[ext_df['Group'] == g_name]['Value'].tolist()
-        cond_data_list.append({
-            'name': g_name,
-            'g1': g_data, 
-            'g2': [], 
-            'sig': "",
-            'source': 'csv'
-        })
-    st.success(f"CSVから {len(ext_df['Group'].unique())} グループのデータを読み込みました。")
+        cond_data_list.append({'name': g_name, 'g1': g_data, 'g2': [], 'sig': ""})
 
 st.divider()
-
-# --- B. 手動入力セクション ---
 st.header("✍️ Step 2: 手動データの追加")
 col_btn1, col_btn2, _ = st.columns([1, 1, 3])
-with col_btn1:
-    st.button("＋ 条件を追加", on_click=add_condition)
-with col_btn2:
-    st.button("－ 条件を削除", on_click=remove_condition)
+with col_btn1: st.button("＋ 条件追加", on_click=add_condition)
+with col_btn2: st.button("－ 条件削除", on_click=remove_condition)
 
 for i in range(st.session_state.cond_count):
     with st.container():
-        st.markdown(f"**追加条件 {i+1}**")
         c_meta, c_g1, c_g2 = st.columns([1.5, 2, 2])
         with c_meta:
             cond_name = st.text_input("条件名", value=f"Manual_{i+1}", key=f"name_{i}")
-            sig_label = st.text_input("有意差", placeholder="e.g. **", key=f"sig_{i}")
-        with c_g1:
-            input1 = st.text_area(f"{group1_name} のデータ", key=f"d1_{i}", help="改行区切りで入力")
-        with c_g2:
-            input2 = st.text_area(f"{group2_name} のデータ", key=f"d2_{i}", help="比較対象がある場合のみ入力")
-
-        vals1, vals2 = [], []
+            sig_label = st.text_input("有意差", key=f"sig_{i}")
+        with c_g1: input1 = st.text_area(f"{group1_name}", key=f"d1_{i}")
+        with c_g2: input2 = st.text_area(f"{group2_name}", key=f"d2_{i}")
         try:
-            if input1: vals1 = [float(x.strip()) for x in input1.strip().split('\n') if x.strip()]
-            if input2: vals2 = [float(x.strip()) for x in input2.strip().split('\n') if x.strip()]
-        except:
-            st.error(f"追加条件 {i+1} に数値以外の文字が含まれています。")
-            
-        if vals1 or vals2:
-            cond_data_list.append({
-                'name': cond_name, 
-                'g1': vals1, 
-                'g2': vals2, 
-                'sig': sig_label,
-                'source': 'manual'
-            })
+            vals1 = [float(x.strip()) for x in input1.strip().split('\n') if x.strip()] if input1 else []
+            vals2 = [float(x.strip()) for x in input2.strip().split('\n') if x.strip()] if input2 else []
+            if vals1 or vals2:
+                cond_data_list.append({'name': cond_name, 'g1': vals1, 'g2': vals2, 'sig': sig_label})
+        except: pass
 
 # ---------------------------------------------------------
-# 描画セクション
+# 描画セクション (修正済み)
 # ---------------------------------------------------------
 if cond_data_list:
     st.divider()
-    st.subheader("📊 最終グラフプレビュー")
     try:
         n_plots = len(cond_data_list)
-        fig, axes = plt.subplots(1, n_plots, figsize=(max(n_plots * 3, 5), 5), sharey=True)
+        fig, axes = plt.subplots(1, n_plots, figsize=(max(n_plots * 3.5, 5), 5), sharey=True)
         if n_plots == 1: axes = [axes]
-        
         plt.subplots_adjust(wspace=0.1)
         fig.suptitle(fig_title, fontsize=16, y=1.08)
 
@@ -144,40 +118,33 @@ if cond_data_list:
             data = cond_data_list[i]
             g1, g2 = np.array(data['g1']), np.array(data['g2'])
             
-            w, gap_val = 0.6, 0.05
-            pos1, pos2 = (-(w/2 + gap_val/2), +(w/2 + gap_val/2)) if len(g1)>0 and len(g2)>0 else (0, 0)
+            # ★スライダーの変数 (width_val, gap_val) を適用
+            pos1, pos2 = (-(width_val/2 + gap_val/2), +(width_val/2 + gap_val/2)) if len(g1)>0 and len(g2)>0 else (0, 0)
 
             def draw_element(ax, pos, vals, color):
                 if len(vals) == 0: return
                 if "棒グラフ" in graph_type:
                     mean = np.mean(vals)
                     err = np.std(vals, ddof=1)
-                    if error_bar_type == "SEM (標準誤差)":
-                        err = err / np.sqrt(len(vals))
-                    ax.bar(pos, mean, width=w, color=color, edgecolor='black', zorder=1)
-                    ax.errorbar(pos, mean, yerr=err, fmt='none', color='black', capsize=5, zorder=2)
+                    if error_bar_type == "SEM (標準誤差)": err /= np.sqrt(len(vals))
+                    # ★width_val と cap_size_val を適用
+                    ax.bar(pos, mean, width=width_val, color=color, edgecolor='black', zorder=1)
+                    ax.errorbar(pos, mean, yerr=err, fmt='none', color='black', capsize=cap_size_val, zorder=2)
                 elif "箱ひげ図" in graph_type:
-                    ax.boxplot(vals, positions=[pos], widths=w, patch_artist=True, showfliers=False,
+                    ax.boxplot(vals, positions=[pos], widths=width_val, patch_artist=True, showfliers=False,
                                boxprops=dict(facecolor=color), medianprops=dict(color="black"), zorder=1)
                 elif "バイオリン図" in graph_type:
-                    vp = ax.violinplot(vals, positions=[pos], widths=w, showextrema=False)
+                    vp = ax.violinplot(vals, positions=[pos], widths=width_val, showextrema=False)
                     for pc in vp['bodies']: pc.set_facecolor(color); pc.set_alpha(0.7); pc.set_zorder(1)
-
                 if show_points:
-                    noise = np.random.normal(0, jitter_strength * w, len(vals))
+                    noise = np.random.normal(0, jitter_strength * width_val, len(vals))
                     ax.scatter(pos + noise, vals, color='white', edgecolor='gray', s=dot_size, alpha=dot_alpha, zorder=3)
 
             draw_element(ax, pos1, g1, color1)
             draw_element(ax, pos2, g2, color2)
 
-            # ★ここも修正：軸ラベルをサイドバーの名前に連動
-            if len(g1)>0 and len(g2)>0:
-                ax.set_xticks([pos1, pos2])
-                ax.set_xticklabels([group1_name, group2_name], fontsize=9)
-            else:
-                ax.set_xticks([0])
-                ax.set_xticklabels([""], fontsize=9)
-            
+            ax.set_xticks([pos1, pos2] if len(g1)>0 and len(g2)>0 else [0])
+            ax.set_xticklabels([group1_name, group2_name] if len(g1)>0 and len(g2)>0 else [""], fontsize=9)
             ax.set_title(data['name'], fontsize=11, pad=10)
             ax.set_ylim(0, y_limit)
             ax.spines['top'].set_visible(False)
@@ -185,20 +152,13 @@ if cond_data_list:
             if i == 0: ax.set_ylabel(y_axis_label, fontsize=12)
             else: ax.spines['left'].set_visible(False); ax.tick_params(axis='y', left=False)
 
-        # ★凡例のラベルをサイドバーの名前に連動
         if show_legend:
-            handles = [mpatches.Patch(facecolor=color1, label=group1_name), 
-                       mpatches.Patch(facecolor=color2, label=group2_name)]
+            handles = [mpatches.Patch(facecolor=color1, label=group1_name), mpatches.Patch(facecolor=color2, label=group2_name)]
             fig.legend(handles=handles, loc='center left', bbox_to_anchor=(0.98, 0.5), frameon=False)
-
         st.pyplot(fig)
         
         buf = io.BytesIO()
         fig.savefig(buf, format='png', bbox_inches='tight', dpi=300)
         now = datetime.datetime.now() + datetime.timedelta(hours=9)
-        st.download_button("グラフ画像を保存", buf, f"hybrid_graph_{now.strftime('%Y%m%d_%H%M%S')}.png")
-
-    except Exception as e:
-        st.error(f"描画エラー: {e}")
-else:
-    st.info("CSVをアップロードするか、手動入力で条件を追加してください。")
+        st.download_button("画像を保存", buf, f"graph_{now.strftime('%Y%m%d_%H%M%S')}.png")
+    except Exception as e: st.error(f"Error: {e}")
